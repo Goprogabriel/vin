@@ -1,0 +1,31 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Meals: kun ejeren kan læse/skrive, og kun oprette hvis userId matcher
+    match /meals/{mealId} {
+      allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+    }
+
+    // Users: brugeren kan læse/skrive sin egen brugerprofil (inkl. credits)
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Recommendation requests: bruger kan læse egne requests og oprette nye
+    match /recommendationRequests/{requestId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      // Cloud Functions skal kunne opdatere
+      allow update: if true;
+    }
+    
+    // Recommendations: bruger kan læse egne anbefalinger
+    match /recommendations/{recommendationId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      // Cloud Functions skal kunne oprette
+      allow create: if true;
+    }
+  }
+}
