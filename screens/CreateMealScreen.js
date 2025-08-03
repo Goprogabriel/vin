@@ -181,6 +181,31 @@ export default function CreateMealScreen({ navigation }) {
     }
   };
 
+  // Upload image to Firebase Storage and get URL
+  const uploadImageToStorage = async (uri, userId) => {
+    try {
+      // Convert image uri to blob
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      
+      // Create a storage reference
+      const storage = getStorage();
+      const filename = uri.substring(uri.lastIndexOf('/') + 1);
+      const storageRef = ref(storage, `mealImages/${userId}/${Date.now()}_${filename}`);
+      
+      // Upload blob to storage reference
+      await uploadBytes(storageRef, blob);
+      
+      // Get download URL
+      const downloadURL = await getDownloadURL(storageRef);
+      console.log("Image uploaded, URL:", downloadURL);
+      return downloadURL;
+    } catch (error) {
+      console.error("Error uploading image:", error);
+      throw error;
+    }
+  };
+
   // Save meal helper
   const saveMeal = async () => {
     try {
@@ -190,18 +215,28 @@ export default function CreateMealScreen({ navigation }) {
       }
 
       console.log("Saving meal for userId:", userId);
+      
+      // Upload all images to Firebase Storage and get their URLs
+      const uploadedImageUrls = [];
+      Alert.alert('Upload', 'Uploader billeder...');
+      
+      for (const imageUri of images) {
+        const downloadURL = await uploadImageToStorage(imageUri, userId);
+        uploadedImageUrls.push(downloadURL);
+      }
+      
       const db = getFirestore();
       const mealData = {
         ...courseDetails,
-        images,
+        images: uploadedImageUrls, // Store the Firebase Storage URLs instead of local URIs
         userId,
         createdAt: Timestamp.now(),
       };
 
       await addDoc(collection(db, 'meals'), mealData);
-      console.log("Meal saved successfully!");
-      Alert.alert('Succes', 'Måltidet er gemt!');
-      navigation.navigate('RecommendationOptions', { mealData: courseDetails, uploadedImageUrls: images });
+      console.log("Meal saved successfully with uploaded images!");
+      Alert.alert('Succes', 'Måltidet er gemt med uploadede billeder!');
+      navigation.navigate('RecommendationOptions', { mealData: courseDetails, uploadedImageUrls });
     } catch (error) {
       console.error("Error saving meal:", error);
       Alert.alert('Fejl', 'Kunne ikke gemme måltidet: ' + error.message);
