@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "vinNoget",
-    "slug": "vinNoget",
+    "name": "Vin til mad",
+    "slug": "vin-til-mad",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -13,17 +13,31 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "buildNumber": "1",
+      "bundleIdentifier": "com.goprogabriel.vintilmad",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Denne app har brug for adgang til kameraet for at tage billeder af din vinreol.",
+        "NSPhotoLibraryUsageDescription": "Denne app har brug for adgang til dine billeder for at uploade billeder af din vinreol.",
+        "NSPhotoLibraryAddUsageDescription": "Denne app har brug for adgang til at gemme billeder."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
+      "versionCode": 1,
       "edgeToEdgeEnabled": true
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "56320509-4bc4-489f-bd91-24e049b0cb19"
+      }
     }
   }
 }

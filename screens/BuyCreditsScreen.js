@@ -10,6 +10,7 @@ import {
   Image
 } from 'react-native';
 import { getFirestore, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc } from 'firebase/firestore';
 import { auth } from '../firebaseConfig';
 
 const BuyCreditsScreen = ({ navigation }) => {
@@ -24,8 +25,6 @@ const BuyCreditsScreen = ({ navigation }) => {
   React.useEffect(() => {
     // Fetch user credits
     fetchUserCredits();
-    // Setup RevenueCat
-    setupRevenueCat();
   }, []);
   
   const fetchUserCredits = async () => {
@@ -52,17 +51,7 @@ const BuyCreditsScreen = ({ navigation }) => {
     }
   };
   
-  const setupRevenueCat = async () => {
-    try {
-      // Dette er en placeholder - simulerer at vi henter pakker
-      // I en ægte implementering ville vi bruge RevenueCat's API her
-      
-      // For nu bruger vi bare mock-data
-      console.log("Pakker er indlæst fra mock data");
-    } catch (error) {
-      console.error("Pakker kunne ikke indlæses:", error);
-    }
-  };
+  // RevenueCat integration fjernet midlertidigt
   
   const handlePackageSelect = (pkg) => {
     setSelectedPackage(pkg);
@@ -90,41 +79,49 @@ const BuyCreditsScreen = ({ navigation }) => {
     }
   };
   
-  const updateUserCredits = async (amount) => {
+  const updateUserCredits = async (amount, revenueCatInfo = {}) => {
     try {
       const db = getFirestore();
       const userId = auth.currentUser?.uid;
       const userRef = doc(db, "users", userId);
-      
+
+      // Opdater credits på bruger
       await updateDoc(userRef, {
         credits: credits + amount
       });
-      
+
       setCredits(credits + amount);
       Alert.alert("Succes", `${amount} credits er tilføjet til din konto!`);
+
+      // Opret log i Firestore for købet
+      await addDoc(collection(db, "creditPurchases"), {
+        userId,
+        creditsBought: amount,
+        timestamp: new Date(),
+        packageId: selectedPackage?.id || null,
+        price: selectedPackage?.price || null,
+        // revenueCatInfo fjernet
+      });
     } catch (error) {
-      console.error("Fejl ved opdatering af credits:", error);
-      Alert.alert("Fejl", "Kunne ikke opdatere dine credits");
+      console.error("Fejl ved opdatering af credits eller log:", error);
+      Alert.alert("Fejl", "Kunne ikke opdatere dine credits eller logge købet");
     }
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>Køb credits</Text>
-        
+        <Text style={styles.title}>Køb Credits</Text>
         <View style={styles.creditsContainer}>
-          <Text style={styles.creditsTitle}>Dine nuværende credits</Text>
-          <Text style={styles.creditsValue}>{credits} credits</Text>
+          <Text style={styles.creditsTitle}>Dine credits</Text>
+          <Text style={styles.creditsValue}>{credits}</Text>
         </View>
-        
-        <Text style={styles.sectionTitle}>Vælg pakke</Text>
-        
+        <Text style={styles.sectionTitle}>Vælg en pakke</Text>
         {packages.map((pkg) => (
           <TouchableOpacity
             key={pkg.id}
             style={[
-              styles.packageCard, 
+              styles.packageCard,
               selectedPackage?.id === pkg.id && styles.selectedPackageCard,
               pkg.popular && styles.popularPackageCard
             ]}
@@ -136,16 +133,13 @@ const BuyCreditsScreen = ({ navigation }) => {
                 <Text style={styles.popularBadgeText}>Populær</Text>
               </View>
             )}
-            
             <View style={styles.packageHeader}>
               <Text style={styles.packageTitle}>{pkg.amount} credits</Text>
               <Text style={styles.packagePrice}>{pkg.price}</Text>
             </View>
-            
             <Text style={styles.packageDescription}>
               Nok til ca. {Math.floor(pkg.amount / 15)} anbefalinger
             </Text>
-            
             {selectedPackage?.id === pkg.id && (
               <View style={styles.checkmark}>
                 <Text style={styles.checkmarkText}>✓</Text>
@@ -153,28 +147,21 @@ const BuyCreditsScreen = ({ navigation }) => {
             )}
           </TouchableOpacity>
         ))}
-        
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.purchaseButton, !selectedPackage && styles.disabledButton]}
           onPress={handlePurchase}
           disabled={!selectedPackage}
           activeOpacity={0.7}
         >
-          <Text style={styles.purchaseButtonText}>
-            {selectedPackage 
-              ? `Køb ${selectedPackage.amount} credits for ${selectedPackage.price}` 
-              : 'Vælg en pakke'}
-          </Text>
+          <Text style={styles.purchaseButtonText}>{selectedPackage ? `Køb ${selectedPackage.amount} credits for ${selectedPackage.price}` : 'Vælg en pakke'}</Text>
         </TouchableOpacity>
-        
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
           activeOpacity={0.7}
         >
           <Text style={styles.backButtonText}>Tilbage</Text>
         </TouchableOpacity>
-        
         <Text style={styles.disclaimer}>
           Dette er en demo version. I den endelige app vil køb blive behandlet via App Store/Google Play.
         </Text>

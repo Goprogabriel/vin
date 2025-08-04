@@ -11,11 +11,38 @@ import {
   ScrollView,
   SafeAreaView
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Reusable Card component
+const Card = ({ children, style }) => (
+  <View style={[styles.card, style]}>{children}</View>
+);
+
+// Reusable SectionTitle component
+const SectionTitle = ({ children }) => (
+  <Text style={styles.sectionTitle}>{children}</Text>
+);
+
+// Reusable PrimaryButton component
+const PrimaryButton = ({ children, onPress, disabled, loading }) => (
+  <TouchableOpacity
+    style={[styles.primaryButton, disabled && styles.buttonDisabled]}
+    onPress={onPress}
+    disabled={disabled}
+    activeOpacity={0.8}
+  >
+    <Text style={styles.primaryButtonText}>
+      {loading ? 'Behandler...' : children}
+    </Text>
+  </TouchableOpacity>
+);
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, Timestamp } from 'firebase/firestore';
 import { auth } from '../firebaseConfig';
 
 const WelcomeScreen = () => {
+  // Navigation support
+  const navigation = typeof useNavigation === 'function' ? useNavigation() : null;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -74,10 +101,23 @@ const WelcomeScreen = () => {
         
         Alert.alert('Succes', 'Bruger oprettet succesfuldt!');
       } else {
-        await signInWithEmailAndPassword(auth, email, password);
+        // Log ind med email og password
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+        
+        // Gem brugeren i AsyncStorage for at bevare login-status
+        try {
+          await AsyncStorage.setItem('user', JSON.stringify({
+            uid: user.uid,
+            email: user.email
+          }));
+          console.log("User saved to AsyncStorage");
+        } catch (storageError) {
+          console.error("Error saving user to AsyncStorage:", storageError);
+        }
         
         // Når brugeren logger ind, sikrer vi os også, at de har en bruger i Firestore
-        const userId = auth.currentUser.uid;
+        const userId = user.uid;
         await createUserInFirestore(userId);
       }
     } catch (error) {
@@ -121,12 +161,12 @@ const WelcomeScreen = () => {
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.headerContainer}>
             <Text style={styles.heading}>Velkommen</Text>
-            <Text style={styles.sectionLabel}>
+            <SectionTitle>
               {isSignUp ? 'Opret ny bruger' : 'Log ind på din konto'}
-            </Text>
+            </SectionTitle>
           </View>
 
-          <View style={styles.formCard}>
+          <Card style={styles.formCard}>
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Email</Text>
               <TextInput
@@ -137,7 +177,7 @@ const WelcomeScreen = () => {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
-                placeholderTextColor="#888"
+                placeholderTextColor="#BFAFA3"
               />
             </View>
             <View style={styles.inputGroup}>
@@ -148,7 +188,7 @@ const WelcomeScreen = () => {
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
-                placeholderTextColor="#888"
+                placeholderTextColor="#BFAFA3"
               />
             </View>
             {isSignUp && (
@@ -160,26 +200,25 @@ const WelcomeScreen = () => {
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   secureTextEntry
-                  placeholderTextColor="#888"
+                  placeholderTextColor="#BFAFA3"
                 />
               </View>
             )}
 
-            <TouchableOpacity
-              style={[styles.button, loading && styles.buttonDisabled]}
+            <PrimaryButton
               onPress={handleAuth}
               disabled={loading}
-              activeOpacity={0.7}
+              loading={loading}
             >
-              <Text style={styles.buttonText}>
-                {loading ? 'Behandler...' : (isSignUp ? 'Opret bruger' : 'Log ind')}
-              </Text>
-            </TouchableOpacity>
+              {isSignUp ? 'Opret bruger' : 'Log ind'}
+            </PrimaryButton>
+
+            <View style={styles.divider} />
 
             <TouchableOpacity
               style={styles.switchButton}
               onPress={() => setIsSignUp(!isSignUp)}
-              activeOpacity={0.7}
+              activeOpacity={0.8}
             >
               <Text style={styles.switchButtonText}>
                 {isSignUp
@@ -188,7 +227,7 @@ const WelcomeScreen = () => {
                 }
               </Text>
             </TouchableOpacity>
-          </View>
+          </Card>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -198,94 +237,114 @@ const WelcomeScreen = () => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F8F6F3', // off-white beige
   },
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'stretch',
-    padding: 16,
+    padding: 24,
   },
   headerContainer: {
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 36,
   },
   heading: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1C1C1C',
-    marginBottom: 8,
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#7B1F2B', // deep wine red
+    marginBottom: 6,
+    letterSpacing: 1,
   },
-  sectionLabel: {
-    fontSize: 16,
-    color: '#888',
-    marginBottom: 8,
+  sectionTitle: {
+    fontSize: 18,
+    color: '#BFAFA3', // muted beige
+    marginBottom: 10,
     textAlign: 'center',
-    fontWeight: '500',
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  card: {
+    backgroundColor: '#FFF9F5', // soft beige
+    borderRadius: 18,
+    padding: 22,
+    shadowColor: '#7B1F2B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.10,
+    shadowRadius: 12,
+    elevation: 6,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: '#F2E6D8',
   },
   formCard: {
-    backgroundColor: '#F2E6D8',
-    borderRadius: 8,
-    padding: 16,
-    shadowColor: '#8B0000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-    elevation: 4,
-    marginBottom: 16,
+    marginBottom: 0,
   },
   inputGroup: {
-    marginBottom: 16,
+    marginBottom: 18,
   },
   inputLabel: {
     fontSize: 16,
-    color: '#1C1C1C',
-    marginBottom: 6,
-    fontWeight: '500',
+    color: '#7B1F2B',
+    marginBottom: 7,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#CCCCCC',
-    borderRadius: 8,
-    padding: 12,
+    borderColor: '#BFAFA3',
+    borderRadius: 12,
+    padding: 14,
     fontSize: 16,
-    backgroundColor: '#FFFFFF',
-    color: '#1C1C1C',
+    backgroundColor: '#F8F6F3',
+    color: '#7B1F2B',
+    marginBottom: 2,
   },
-  button: {
-    backgroundColor: '#8B0000',
-    borderRadius: 8,
+  divider: {
+    height: 1,
+    backgroundColor: '#F2E6D8',
+    marginVertical: 18,
+    borderRadius: 1,
+  },
+  primaryButton: {
+    backgroundColor: '#7B1F2B',
+    borderRadius: 12,
     paddingVertical: 14,
-    paddingHorizontal: 16,
     alignItems: 'center',
-    marginVertical: 8,
-    width: '100%',
-    shadowColor: '#8B0000',
+    justifyContent: 'center',
+    marginTop: 10,
+    shadowColor: '#7B1F2B',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 2,
   },
-  buttonDisabled: {
-    backgroundColor: '#CCCCCC',
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
+  primaryButtonText: {
+    color: '#FFF9F5',
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: 0.7,
   },
   switchButton: {
     alignItems: 'center',
-    padding: 10,
+    padding: 12,
     width: '100%',
+    borderRadius: 16,
+    backgroundColor: '#F2E6D8',
+    marginTop: 2,
+    shadowColor: '#BFAFA3',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1,
   },
   switchButtonText: {
-    color: '#D2691E',
+    color: '#7B1F2B',
     fontSize: 15,
     fontWeight: '600',
     textAlign: 'center',
-  },
+    letterSpacing: 0.2
+  }
 });
 
 export default WelcomeScreen;

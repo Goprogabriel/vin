@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, TextInput, StyleSheet, ScrollView, Image, Alert, SafeAreaView, Pressable, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, StyleSheet, ScrollView, Image, Alert, SafeAreaView, Pressable, Modal, Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { useEffect } from 'react';
 import { getFirestore, collection, addDoc, Timestamp } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth } from '../firebaseConfig';
@@ -20,6 +21,20 @@ export default function CreateMealScreen({ navigation }) {
   const [customTasteInput, setCustomTasteInput] = useState('');
   const [showCustomTasteModal, setShowCustomTasteModal] = useState(false);
   const [currentEditingCourse, setCurrentEditingCourse] = useState(null);
+
+  // Request permissions on mount
+  useEffect(() => {
+    (async () => {
+      const cameraStatus = await ImagePicker.getCameraPermissionsAsync();
+      const mediaStatus = await ImagePicker.getMediaLibraryPermissionsAsync();
+      if (!cameraStatus.granted) {
+        await ImagePicker.requestCameraPermissionsAsync();
+      }
+      if (!mediaStatus.granted) {
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      }
+    })();
+  }, []);
 
   // Add new course
   const addCourse = () => {
@@ -89,28 +104,78 @@ export default function CreateMealScreen({ navigation }) {
     setShowCustomTasteModal(false);
   };
 
-  // Step 3: Image picker
+  // Step 3: Image picker with improved error handling for production
   const pickImage = async (fromCamera) => {
-    let result;
-    if (fromCamera) {
-      result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.7,
-      });
-    } else {
-      result = await ImagePicker.launchImageLibraryAsync({
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.7,
-      });
-    }
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      if (images.length >= 3) {
-        Alert.alert('Maks 3 billeder', 'Du kan kun uploade op til 3 billeder.');
+    try {
+      // Check permissions before picking - more defensive approach for production
+      let cameraPerm, mediaPerm;
+      
+      try {
+        if (fromCamera) {
+          cameraPerm = await ImagePicker.getCameraPermissionsAsync();
+          if (!cameraPerm.granted) {
+            const { granted } = await ImagePicker.requestCameraPermissionsAsync();
+            if (!granted) {
+              Alert.alert('Ingen adgang', 'Appen har ikke adgang til kameraet. Gå til indstillinger for at aktivere kameraadgang.');
+              return;
+            }
+          }
+        } else {
+          mediaPerm = await ImagePicker.getMediaLibraryPermissionsAsync();
+          if (!mediaPerm.granted) {
+            const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (!granted) {
+              Alert.alert('Ingen adgang', 'Appen har ikke adgang til dine billeder. Gå til indstillinger for at aktivere adgang til billeder.');
+              return;
+            }
+          }
+        }
+      } catch (permError) {
+        console.error('Error checking permissions:', permError);
+        Alert.alert('Tilladelser', 'Kunne ikke verificere app-tilladelser. Prøv igen.');
         return;
       }
-      setImages([...images, ...result.assets.map((a) => a.uri)].slice(0, 3));
+      
+      // Options with lower quality and simpler settings for better compatibility
+      const options = {
+        allowsEditing: true,
+        quality: 0.5,
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: false,
+      };
+      
+      // Launch camera or image library with simplified error handling
+      let result;
+      try {
+        if (fromCamera) {
+          result = await ImagePicker.launchCameraAsync(options);
+        } else {
+          result = await ImagePicker.launchImageLibraryAsync(options);
+        }
+      } catch (pickerError) {
+        console.error('Error during image picking:', pickerError);
+        Alert.alert('Fejl', 'Kunne ikke åbne kamera eller galleri. Prøv igen eller genstart app.');
+        return;
+      }
+      
+      // Safely handle the result with defensive checks
+      if (!result.canceled && result.assets && Array.isArray(result.assets) && result.assets.length > 0) {
+        if (images.length >= 3) {
+          Alert.alert('Maks 3 billeder', 'Du kan kun uploade op til 3 billeder.');
+          return;
+        }
+        
+        // More robust safety check on URIs
+        const validAssets = result.assets.filter(asset => asset && typeof asset === 'object' && asset.uri && typeof asset.uri === 'string');
+        if (validAssets.length > 0) {
+          setImages(prevImages => [...prevImages, ...validAssets.map(a => a.uri)].slice(0, 3));
+        } else {
+          Alert.alert('Fejl', 'Kunne ikke hente billede. Prøv igen med et andet billede.');
+        }
+      }
+    } catch (error) {
+      console.error('Unexpected error in pickImage:', error);
+      Alert.alert('Fejl', 'Der opstod en uventet fejl ved billedvalg. Prøv igen.');
     }
   };
 
@@ -154,92 +219,179 @@ export default function CreateMealScreen({ navigation }) {
     await saveMeal();
   };
 
-  // Helper: create user in Firestore if not exists
-  const createUserIfNotExists = async (userId) => {
-    try {
-      console.log("Checking if user exists in Firestore:", userId);
-      const db = getFirestore();
-      const userRef = collection(db, 'users');
-      const userDoc = await getDocs(
-        query(userRef, where('uid', '==', userId))
-      );
+  // Note: User creation functionality removed as only logged-in users can access this screen
 
-      if (userDoc.empty) {
-        console.log("User does not exist. Creating new user with ID:", userId);
-        await addDoc(userRef, {
-          uid: userId,
-          credits: 30,
-          createdAt: Timestamp.now(),
-        });
-        console.log("User created successfully!");
-      } else {
-        console.log("User already exists, no need to create.");
-      }
-    } catch (error) {
-      console.error("Error in createUserIfNotExists:", error);
-      throw error;
-    }
-  };
-
-  // Upload image to Firebase Storage and get URL
+  // Upload image to Firebase Storage and get URL - production-ready error handling
   const uploadImageToStorage = async (uri, userId) => {
     try {
-      // Convert image uri to blob
-      const response = await fetch(uri);
-      const blob = await response.blob();
+      if (!uri || typeof uri !== 'string') {
+        console.error("Invalid image URI:", uri);
+        throw new Error("Ugyldigt billedformat");
+      }
       
-      // Create a storage reference
+      if (!userId || typeof userId !== 'string') {
+        console.error("Invalid user ID:", userId);
+        throw new Error("Bruger-ID mangler");
+      }
+      
+      console.log("Attempting to upload image from URI:", uri);
+      
+      // Handle potential different URI formats between Expo dev and production
+      let imageUri = uri;
+      
+      if (Platform && Platform.OS === 'ios' && !uri.startsWith('file:') && !uri.startsWith('http')) {
+        imageUri = `file://${uri}`;
+      }
+      
+      // Convert image uri to blob with improved error handling and timeout
+      let response;
+      try {
+        const fetchPromise = fetch(imageUri);
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Billedhentning tidsudløb - prøv igen')), 20000)
+        );
+        
+        response = await Promise.race([fetchPromise, timeoutPromise]);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP fejl: ${response.status}`);
+        }
+      } catch (fetchError) {
+        console.error("Fetch error:", fetchError);
+        throw new Error("Kunne ikke hente billedet: " + (fetchError.message || 'Ukendt fejl'));
+      }
+      
+      // Get blob with error handling
+      let blob;
+      try {
+        blob = await response.blob();
+        
+        if (!blob || blob.size === 0) {
+          throw new Error("Kunne ikke konvertere billedet til korrekt format");
+        }
+        
+        if (blob.size > 5 * 1024 * 1024) { // 5MB limit
+          throw new Error("Billedet er for stort. Max størrelse er 5MB");
+        }
+      } catch (blobError) {
+        console.error("Blob error:", blobError);
+        throw new Error("Billedfejl: " + (blobError.message || 'Kunne ikke behandle billedet'));
+      }
+      
+      // Create a storage reference with safe naming
       const storage = getStorage();
-      const filename = uri.substring(uri.lastIndexOf('/') + 1);
-      const storageRef = ref(storage, `mealImages/${userId}/${Date.now()}_${filename}`);
+      const timestamp = Date.now();
+      const randomId = Math.random().toString(36).substring(2, 10);
+      const safeFilename = `image_${timestamp}_${randomId}.jpg`;
+      const storageRef = ref(storage, `mealImages/${userId}/${safeFilename}`);
       
       // Upload blob to storage reference
-      await uploadBytes(storageRef, blob);
+      const uploadResult = await uploadBytes(storageRef, blob);
+      console.log("Upload completed:", uploadResult.metadata?.name || 'unknown');
       
       // Get download URL
       const downloadURL = await getDownloadURL(storageRef);
+      return downloadURL;
       console.log("Image uploaded, URL:", downloadURL);
       return downloadURL;
     } catch (error) {
       console.error("Error uploading image:", error);
-      throw error;
+      console.error("Error details:", JSON.stringify(error));
+      
+      // Provide more specific error messages
+      if (error.message && error.message.includes('fetch')) {
+        throw new Error("Netværksfejl ved billedoverførsel. Tjek din internetforbindelse.");
+      } else if (error.code && error.code.includes('storage/')) {
+        throw new Error("Firebase Storage fejl: " + error.message);
+      } else {
+        throw new Error("Billedoverførsel fejlede: " + error.message);
+      }
     }
   };
 
-  // Save meal helper
+  // Save meal helper with improved error handling and stability
   const saveMeal = async () => {
     try {
+      // Check auth state
       const userId = auth.currentUser?.uid;
       if (!userId) {
-        throw new Error("User is not authenticated. Cannot save meal.");
+        Alert.alert('Log ind', 'Du skal være logget ind for at gemme måltidet.');
+        return;
       }
 
       console.log("Saving meal for userId:", userId);
       
-      // Upload all images to Firebase Storage and get their URLs
-      const uploadedImageUrls = [];
-      Alert.alert('Upload', 'Uploader billeder...');
-      
-      for (const imageUri of images) {
-        const downloadURL = await uploadImageToStorage(imageUri, userId);
-        uploadedImageUrls.push(downloadURL);
+      // Validate there's at least one image
+      if (!images || images.length === 0) {
+        Alert.alert('Manglende billede', 'Du skal uploade mindst ét billede.');
+        setStep(3); // Go back to image upload step
+        return;
       }
       
-      const db = getFirestore();
-      const mealData = {
-        ...courseDetails,
-        images: uploadedImageUrls, // Store the Firebase Storage URLs instead of local URIs
-        userId,
-        createdAt: Timestamp.now(),
-      };
+      // Show progress indicator
+      Alert.alert('Upload', 'Uploader billeder...');
+      
+      // Upload all images to Firebase Storage and get their URLs
+      const uploadedImageUrls = [];
+      
+      // Process images with improved error handling for production environment
+      try {
+        // Process one image at a time with better error messages
+        for (let i = 0; i < images.length; i++) {
+          const imageUri = images[i];
+          if (!imageUri) continue; // Skip invalid URIs
+          
+          try {
+            Alert.alert('Upload', `Uploader billede ${i+1} af ${images.length}...`);
+            const downloadURL = await uploadImageToStorage(imageUri, userId);
+            if (downloadURL) {
+              uploadedImageUrls.push(downloadURL);
+            }
+          } catch (singleImageError) {
+            console.error(`Error uploading image ${i+1}:`, singleImageError);
+            // Continue with other images instead of failing completely
+            Alert.alert('Advarsel', `Kunne ikke uploade billede ${i+1}. Forsøger med næste billede.`);
+          }
+        }
+        
+        if (uploadedImageUrls.length === 0) {
+          throw new Error("Ingen billeder kunne uploades. Prøv med andre billeder.");
+        }
+      } catch (uploadError) {
+        console.error("Error during image upload process:", uploadError);
+        Alert.alert('Fejl', 'Billedupload fejlede: ' + uploadError.message);
+        return;
+      }
+      
+      // Prepare and save meal data
+      try {
+        const db = getFirestore();
+        const mealData = {
+          ...courseDetails,
+          images: uploadedImageUrls, // Store the Firebase Storage URLs instead of local URIs
+          userId,
+          createdAt: Timestamp.now(),
+        };
 
-      await addDoc(collection(db, 'meals'), mealData);
-      console.log("Meal saved successfully with uploaded images!");
-      Alert.alert('Succes', 'Måltidet er gemt med uploadede billeder!');
-      navigation.navigate('RecommendationOptions', { mealData: courseDetails, uploadedImageUrls });
+        // Add the meal document
+        const mealDocRef = await addDoc(collection(db, 'meals'), mealData);
+        console.log("Meal saved successfully with ID:", mealDocRef.id);
+        
+        // Navigate to recommendation options with timeout to ensure Firestore write completes
+        setTimeout(() => {
+          navigation.navigate('RecommendationOptions', { 
+            mealData: courseDetails,
+            uploadedImageUrls,
+            mealId: mealDocRef.id
+          });
+        }, 500);
+      } catch (dbError) {
+        console.error("Database error saving meal:", dbError);
+        Alert.alert('Database Fejl', 'Kunne ikke gemme måltidet i databasen: ' + dbError.message);
+      }
     } catch (error) {
-      console.error("Error saving meal:", error);
-      Alert.alert('Fejl', 'Kunne ikke gemme måltidet: ' + error.message);
+      console.error("Unexpected error saving meal:", error);
+      Alert.alert('Fejl', 'Der opstod en uventet fejl: ' + error.message);
     }
   };
 

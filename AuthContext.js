@@ -14,23 +14,42 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        setUser(user);
-        await AsyncStorage.setItem('user', JSON.stringify(user));
+    let mounted = true;
+    // Lyt kun til Firebase Auth state
+    const unsubscribe = onAuthStateChanged(auth, (authUser) => {
+      if (!mounted) return;
+      console.log('Auth state changed, user:', authUser ? 'exists' : 'null');
+      if (authUser) {
+        const userData = {
+          uid: authUser.uid,
+          email: authUser.email,
+          displayName: authUser.displayName
+        };
+        setUser(userData);
       } else {
         setUser(null);
-        await AsyncStorage.removeItem('user');
       }
       setLoading(false);
     });
-
-    return unsubscribe;
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
   }, []);
+
+  const logout = async () => {
+    try {
+      await auth.signOut();
+      setUser(null);
+    } catch (error) {
+      console.error('Error during logout:', error);
+    }
+  };
 
   const value = {
     user,
-    loading
+    loading,
+    logout
   };
 
   return (
